@@ -35,6 +35,8 @@ def is_fused_q_cutedsl_supported(
 ) -> bool:
     if not (
         current_platform.has_device_capability(100)
+        # Not validated on Thor; it takes the Triton path.
+        and not current_platform.is_device_capability(110)
         and q_pe.dtype == torch.bfloat16
         and q_pe.shape[-1] == 64
         and (
