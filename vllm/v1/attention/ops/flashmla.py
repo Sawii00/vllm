@@ -66,10 +66,12 @@ def is_flashmla_sparse_supported() -> tuple[bool, str | None]:
     if not (
         current_platform.is_device_capability_family(90)
         or current_platform.is_device_capability_family(100)
+        or current_platform.is_device_capability(110)
     ):
         return (
             False,
-            "FlashMLA Sparse is only supported on Hopper and Blackwell DC devices.",
+            "FlashMLA Sparse is only supported on Hopper, Blackwell DC and "
+            "Thor devices.",
         )
     return True, None
 
