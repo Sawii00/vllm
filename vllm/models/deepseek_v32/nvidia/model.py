@@ -166,6 +166,20 @@ class DeepseekV32DecoderLayer(torch.nn.Module):
         return hidden_states, residual
 
 
+def _check_pp_stage_start(start_layer: int, layers) -> None:
+    """Pipeline stages hand over only hidden_states and residual, not the
+    top-k indices, so a stage must not start on a layer that reuses the
+    previous layer's indices: it would read an uninitialised
+    topk_indices_buffer."""
+    if start_layer != 0 and layers[start_layer].self_attn.indexer is None:
+        raise ValueError(
+            f"Pipeline stage starts at layer {start_layer}, which has no indexer "
+            "and reuses the top-k indices of an earlier layer. Choose a "
+            "VLLM_PP_LAYER_PARTITION whose stages each start on a layer with an "
+            "indexer."
+        )
+
+
 class DeepseekV32Model(torch.nn.Module):
     fall_back_to_pt_during_load = False
 
@@ -223,6 +237,7 @@ class DeepseekV32Model(torch.nn.Module):
             ),
             prefix=f"{prefix}.layers",
         )
+        _check_pp_stage_start(self.start_layer, self.layers)
 
         if get_pp_group().is_last_rank:
             self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
