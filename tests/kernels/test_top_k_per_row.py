@@ -23,9 +23,11 @@ def _has_device_capability(major: int) -> bool:
 
 
 def _has_cooperative_topk() -> bool:
-    return _has_device_capability(
-        90
-    ) and not current_platform.is_device_capability_family(120)
+    return (
+        _has_device_capability(90)
+        and not current_platform.is_device_capability_family(110)
+        and not current_platform.is_device_capability_family(120)
+    )
 
 
 def _on_gfx950() -> bool:
@@ -2510,7 +2512,7 @@ SPARSE_INDEXER_EXPLICIT_BACKENDS = [
         "cooperative",
         marks=pytest.mark.skipif(
             not _has_cooperative_topk(),
-            reason="cooperative_topk requires SM90+ (non-SM12x)",
+            reason="cooperative_topk requires SM90+ (non-SM11x/SM12x)",
         ),
     ),
     pytest.param(
@@ -2688,8 +2690,13 @@ def test_sparse_indexer_topk_backend_resolution() -> None:
             resolve("auto", unaligned_logits, num_rows=AUTO_COOPERATIVE_MAX_ROWS)
             == "cooperative"
         )
-    # ...and persistent past the row limit.
-    assert resolve("auto", unaligned_logits, num_rows=128) == "persistent"
+    if current_platform.is_device_capability_family(110):
+        # Thor: "auto" never picks persistent (see SparseIndexerTopk.__init__).
+        for num_rows in (1, 4, 16, 128):
+            assert resolve("auto", num_rows=num_rows) == "per_row"
+    else:
+        # ...and persistent past the row limit.
+        assert resolve("auto", unaligned_logits, num_rows=128) == "persistent"
     # Unsupported topk (outside {512, 1024, 2048} for the workspace kernels)
     # -> per_row fallback.
     assert resolve("auto", k=5000) == "per_row"
@@ -2700,6 +2707,9 @@ def test_sparse_indexer_topk_backend_resolution() -> None:
     assert resolve("persistent") == "persistent"
     if has_coop:
         assert resolve("cooperative") == "cooperative"
+    else:
+        with pytest.raises(RuntimeError, match="not supported on the SM11x/SM12x"):
+            resolve("cooperative", num_rows=1)
     if has_fi:
         assert resolve("flashinfer") == "flashinfer"
     if is_sm100:
@@ -2877,11 +2887,14 @@ def test_sparse_indexer_resolved_persistent_bf16(
     reference = torch.empty_like(output)
     selector = _make_topk(backend)
     resolved = selector.resolve_backend(logits, k, rows)
-    assert resolved == (
-        "cooperative"
-        if backend == "auto" and rows <= 64 and _has_cooperative_topk()
-        else "persistent"
-    )
+    if backend == "auto" and current_platform.is_device_capability_family(110):
+        # Thor: "auto" never picks persistent (see SparseIndexerTopk.__init__).
+        expected = "per_row"
+    elif backend == "auto" and rows <= 64 and _has_cooperative_topk():
+        expected = "cooperative"
+    else:
+        expected = "persistent"
+    assert resolved == expected
     assert selector.resolve_backend(fp32, k, rows) == resolved
     takes_bf16 = selector.takes_bf16_logits(logits, k, rows)
     assert takes_bf16 == (

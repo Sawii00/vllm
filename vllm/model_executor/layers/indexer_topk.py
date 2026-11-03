@@ -157,6 +157,11 @@ class SparseIndexerTopk(torch.nn.Module):
             current_platform.is_device_capability_family(100)
         )
         self._has_flashinfer_topk = has_flashinfer()
+        # Thor (11.x) keeps "auto" on per_row: cooperative_topk's 16-CTA cluster
+        # cannot launch on its 20 SMs, and persistent_topk's coarse-bin buffers
+        # silently drop candidates when many logits share the threshold bin.
+        # An explicit persistent request is still honoured.
+        self._auto_skips_persistent = current_platform.is_device_capability_family(110)
         self._cooperative_capable = self._is_cuda and (
             current_platform.has_device_capability(90)
             and not current_platform.is_device_capability_family(110)
@@ -270,7 +275,11 @@ class SparseIndexerTopk(torch.nn.Module):
         """
         if not self._cooperative_constraints(logits, topk_tokens, num_rows):
             return "cooperative"
-        if self._is_cuda and topk_tokens in (512, 1024, 2048):
+        if (
+            self._is_cuda
+            and not self._auto_skips_persistent
+            and topk_tokens in (512, 1024, 2048)
+        ):
             return "persistent"
         return "per_row"
 
