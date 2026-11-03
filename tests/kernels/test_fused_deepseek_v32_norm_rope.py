@@ -54,8 +54,9 @@ class ModelConfig(NamedTuple):
 MODEL_CONFIGS = [
     ModelConfig(2048, 512, 64, 8, 32, 128, 6144),  # GLM-5.2
     ModelConfig(1536, 512, 64, 16, 64, 128, 7168),  # DeepSeek-V3.2
+    ModelConfig(2048, 512, 64, 64, 32, 128, 6144),  # GLM-5.3, all 64 heads local (TP1)
 ]
-MODEL_IDS = ["glm5.2", "dsv3.2"]
+MODEL_IDS = ["glm5.2", "dsv3.2", "glm5.3-tp1"]
 
 pytestmark = pytest.mark.skipif(
     not current_platform.supports_fp8(),
