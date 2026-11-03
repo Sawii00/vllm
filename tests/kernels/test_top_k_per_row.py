@@ -1665,9 +1665,11 @@ def _has_flashinfer_topk() -> bool:
 
 
 def _has_cooperative_topk() -> bool:
-    return _has_device_capability(
-        90
-    ) and not current_platform.is_device_capability_family(120)
+    return (
+        _has_device_capability(90)
+        and not current_platform.is_device_capability_family(110)
+        and not current_platform.is_device_capability_family(120)
+    )
 
 
 SPARSE_INDEXER_EXPLICIT_BACKENDS = [
@@ -1688,7 +1690,7 @@ SPARSE_INDEXER_EXPLICIT_BACKENDS = [
         "cooperative",
         marks=pytest.mark.skipif(
             not _has_cooperative_topk(),
-            reason="cooperative_topk requires SM90+ (non-SM12x)",
+            reason="cooperative_topk requires SM90+ (non-SM11x/SM12x)",
         ),
     ),
     pytest.param(
@@ -1866,8 +1868,13 @@ def test_sparse_indexer_topk_backend_resolution() -> None:
             resolve("auto", unaligned_logits, num_rows=AUTO_COOPERATIVE_MAX_ROWS)
             == "cooperative"
         )
-    # ...and persistent past the row limit.
-    assert resolve("auto", unaligned_logits, num_rows=128) == "persistent"
+    if current_platform.is_device_capability_family(110):
+        # Thor: "auto" never picks persistent (see SparseIndexerTopk.__init__).
+        for num_rows in (1, 4, 16, 128):
+            assert resolve("auto", num_rows=num_rows) == "per_row"
+    else:
+        # ...and persistent past the row limit.
+        assert resolve("auto", unaligned_logits, num_rows=128) == "persistent"
     # Unsupported topk (outside {512, 1024, 2048} for the workspace kernels)
     # -> per_row fallback.
     assert resolve("auto", k=5000) == "per_row"
@@ -1878,6 +1885,9 @@ def test_sparse_indexer_topk_backend_resolution() -> None:
     assert resolve("persistent") == "persistent"
     if has_coop:
         assert resolve("cooperative") == "cooperative"
+    else:
+        with pytest.raises(RuntimeError, match="not supported on the SM11x or SM12x"):
+            resolve("cooperative", num_rows=1)
     if has_fi:
         assert resolve("flashinfer") == "flashinfer"
     if is_sm100:
