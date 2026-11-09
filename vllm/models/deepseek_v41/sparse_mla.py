@@ -149,7 +149,12 @@ class DeepseekV4SparseMLABackend(AttentionBackend):
 
     @classmethod
     def supports_compute_capability(cls, capability: DeviceCapability) -> bool:
-        return capability.major in [9, 10]
+        # Thor (11.0) runs FlashMLA's SM100 kernels; FlashMLA rejects the
+        # shapes it has not validated there.
+        return capability.major in [9, 10] or (
+            capability.major,
+            capability.minor,
+        ) == (11, 0)
 
 
 @dataclass
