@@ -632,7 +632,15 @@ def _engram_head_shard_weight_loader(
     assert shard.shape == param.shape, (
         f"engram shard {tuple(shard.shape)} does not fit param {tuple(param.shape)}"
     )
-    param.data.copy_(shard)
+    # On Tegra, a host-to-device copy straight from the mmap'd checkpoint
+    # copies-on-write every source page, holding a second copy of the table
+    # until the file closes. Small cloned chunks keep host memory flat.
+    step = max(1, (256 << 20) // shard[0].nbytes)
+    for start in range(0, part_rows, step):
+        chunk = shard[start : start + step]
+        if chunk.is_cpu and not param.is_cpu:
+            chunk = chunk.clone()
+        param.data[start : start + step].copy_(chunk)
 
 
 # Branching on SORTED at runtime intermittently crashes Triton 3.8's
