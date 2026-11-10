@@ -129,7 +129,9 @@ class PipelineCache(nn.Module, AttentionLayerBase):
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
         assert self.spec is not None
-        return self.spec
+        # The executor picks the block size after the model is built; the
+        # source layer reports the current one.
+        return replace(self.spec, block_size=vllm_config.cache_config.block_size)
 
     def get_attn_backend(self) -> type[AttentionBackend]:
         assert self.backend is not None
